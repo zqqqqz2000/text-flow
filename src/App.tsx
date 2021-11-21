@@ -1,6 +1,6 @@
 import { AddIcon, ArrowRightIcon } from "@chakra-ui/icons";
 import streamSaver from 'streamsaver';
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Button, Text, Stack, Textarea } from "@chakra-ui/react";
 import { FileTrunkReader } from "./utils/fileTrunkReader";
@@ -9,6 +9,9 @@ import 'flexlayout-react/style/light.css';
 import { IJsonModel, Layout, Model } from "flexlayout-react";
 import { DisplayRange, DisplayRangeSelector } from "./components/DisplayRangeSelector";
 import { useThrottle } from "react-use";
+import { TextFlow } from "./components/Flow";
+import { FlowProcessor, ProcessorChainNode } from "./utils/flowProcessor";
+import { textSplit } from "./utils/func";
 
 const validateFiles = (value: FileList) => {
   if (value.length < 1) {
@@ -40,12 +43,12 @@ const modelJson: IJsonModel = {
     {
       type: "border",
       location: "bottom",
-      size: 100,
+      size: 300,
       children: [
         {
           type: "tab",
           name: "Processes",
-          component: "Processes"
+          component: "Flow"
         }
       ]
     }
@@ -104,6 +107,10 @@ function App() {
   const [fileTrunkReader, setCurrentFileTrunkReader] = useState<FileTrunkReader | undefined>(undefined);
   const [fileContent, setFileContent] = useState<string>('');
   const [saving, setSaving] = useState<boolean>(false);
+  const flowProcessor = useMemo(
+    () => {
+      return new FlowProcessor(new ProcessorChainNode(new Set(), (props) => props, []), textSplit);
+    }, []);
 
   const onSubmit = handleSubmit((data) => {
     const file = data.file_[0];
@@ -125,7 +132,7 @@ function App() {
         setFileContent(value);
       })
     }
-  }, [displayRange]);
+  }, [displayRange, fileTrunkReader]);
   const componentMap: Record<string, React.ReactNode> = {
     View: <Stack p={5}>
       <DisplayRangeSelector maxLimit={1024 * 128} onChange={setDisplayRange} size={fileTrunkReader?.file?.size} />
@@ -160,7 +167,10 @@ function App() {
             setSaving(false);
           }
         }}>Run</Button>
-    </Stack>
+    </Stack>,
+    Flow: <TextFlow
+      flowProcessor={flowProcessor}
+    />,
   };
   return <>
     <div style={{ height: '100vh' }}>

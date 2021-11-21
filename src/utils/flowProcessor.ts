@@ -72,8 +72,12 @@ export class FlowProcessor {
         this.lastRemain = '';
     }
 
-    public process(content: string) {
-
+    public process(content: string, debug: boolean = false) {
+        let splitted = this.splitFunc(content);
+        splitted[0] = this.lastRemain + splitted[0];
+        this.lastRemain = splitted[splitted.length - 1];
+        splitted = splitted.slice(1, splitted.length - 1);
+        this.processChain.process({ input: splitted, debug });
     }
 
     public run(fileTrunkReader: FileTrunkReader) {
@@ -85,14 +89,14 @@ export type ProcessorInput = { input: unknown, debug?: boolean };
 export class ProcessorChainNode {
     public process: (args: { [index: string]: any }) => void;
     public reset: () => void;
+    public output?: unknown;
+    public input?: ProcessorInput;
+    public error?: unknown;
 
     constructor(
         public childNodes: Set<ProcessorChainNode>,
         private processor: (args: ProcessorInput) => unknown,
         private processorArgsSign: string[],
-        public output: unknown,
-        public input: ProcessorInput,
-        public error?: unknown,
     ) {
         const { func, reset } = stepPartialFunc(this.process_, this.processorArgsSign);
         this.process = func;
