@@ -1,16 +1,31 @@
-import React, { memo, useEffect, useState, DragEvent, useRef } from 'react';
+import React, { memo, useEffect, useState, DragEvent, useRef, useCallback } from 'react';
 import { Center, Square, Stack } from '@chakra-ui/layout';
-import { StackDivider } from '@chakra-ui/react';
+import { Box, StackDivider } from '@chakra-ui/react';
 import AceEditor from 'react-ace';
 import "ace-builds/src-noconflict/ext-language_tools";
-import ReactFlow, { Controls, Elements as FlowElements, FlowElement, Handle, MiniMap, OnLoadParams, Position } from 'react-flow-renderer';
+import ReactFlow, { addEdge, Controls, Elements as FlowElements, FlowElement, Handle, MiniMap, OnLoadParams, Position, removeElements } from 'react-flow-renderer';
 import { FlowProcessor, ProcessorChainNode } from '../utils/flowProcessor';
 import "ace-builds/src-noconflict/mode-javascript";
 import "ace-builds/src-noconflict/theme-tomorrow";
 import { defaultSplit } from '../utils/codeDemo';
+import { InputNode } from './Nodes/InputNode';
+import { MapNode } from './Nodes/MapNode';
+import { FilterNode } from './Nodes/FilterNode';
+import { ReduceNode } from './Nodes/ReduceNode';
+import { JoinNode } from './Nodes/JoinNode';
+import { ProcessNode } from './Nodes/ProcessNode';
 
 export type TextFlowTextProps = {
     flowProcessor: FlowProcessor;
+};
+
+const nodeTypes = {
+    MapNode,
+    FilterNode,
+    InputNode,
+    JoinNode,
+    ProcessNode,
+    ReduceNode,
 };
 
 const SideBar: React.FC = () => {
@@ -22,38 +37,23 @@ const SideBar: React.FC = () => {
         }
     };
     return <Stack w="300px" height="100%" spacing={4} p={2}>
-        <Square p={2} border="1px solid black" onDragStart={(event) => onDragStart(event, 'map')} draggable>
-            Map
-        </Square>
-        <Square p={2} border="1px solid black" onDragStart={(event) => onDragStart(event, 'filter')} draggable>
-            Filter
-        </Square>
-        <Square p={2} border="1px solid black" onDragStart={(event) => onDragStart(event, 'reduce')} draggable>
-            Reduce
-        </Square>
-        <Square p={2} border="1px solid black" onDragStart={(event) => onDragStart(event, 'join')} draggable>
-            Join
-        </Square>
-        <Square p={2} border="1px solid black" onDragStart={(event) => onDragStart(event, 'process')} draggable>
-            Process
-        </Square>
+        <Box onDragStart={(event) => onDragStart(event, 'MapNode')} draggable>
+            <MapNode data={{}} />
+        </Box>
+        <Box onDragStart={(event) => onDragStart(event, 'FilterNode')} draggable>
+            <FilterNode />
+        </Box>
+        <Box onDragStart={(event) => onDragStart(event, 'ReduceNode')} draggable>
+            <ReduceNode data={{}} />
+        </Box>
+        <Box onDragStart={(event) => onDragStart(event, 'JoinNode')} draggable>
+            <JoinNode data={{}} />
+        </Box>
+        <Box onDragStart={(event) => onDragStart(event, 'ProcessNode')} draggable>
+            <ProcessNode data={{}} />
+        </Box>
     </Stack>
 };
-
-const TextInputNode: React.FC<{ data: {}, isConnectable: boolean }> = memo(({ data }) => {
-    return <>
-        <Center h="100%">
-            Text Source<br />
-            Split Function
-        </Center>
-        <Handle
-            type="source"
-            position={Position.Right}
-            id="source-output"
-            isConnectable={true}
-        />
-    </>;
-});
 
 let id = 0;
 const getId = () => `processor-${id++}`;
@@ -70,9 +70,8 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
         if (!rootElement) {
             rootElement = {
                 id: 'root',
-                type: 'TextInputNode',
-                style: { border: '1px solid #777', padding: 10, height: 60, width: 200 },
-                data: { code: defaultSplit },
+                type: 'InputNode',
+                data: { code: defaultSplit, withHandle: true },
                 position: { x: 0, y: 0 },
                 sourcePosition: Position.Right,
             };
@@ -101,12 +100,25 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
                 id: getId(),
                 type,
                 position,
-                data: { label: `${type} node` },
+                data: { withHandle: true },
             };
 
             setElements((es) => es.concat(newNode));
         }
     };
+
+    const onElementsRemove = useCallback(
+        (elementsToRemove) =>
+            setElements((els) => removeElements(elementsToRemove, els)),
+        []
+    );
+    const onConnect = useCallback(
+        (params) => {
+            setElements((els) => {
+                return addEdge({ ...params, animated: true, style: { stroke: 'black' } }, els);
+            });
+        }, []
+    );
     return <Stack
         h="100%"
         w="100%"
@@ -125,7 +137,7 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
             showPrintMargin={true}
             showGutter={true}
             highlightActiveLine={true}
-            value={currentElement?.data?.code}
+            value={currentElement?.data?.code ?? ''}
             setOptions={{
                 enableBasicAutocompletion: true,
                 enableLiveAutocompletion: true,
@@ -135,29 +147,26 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
             }} />
         <SideBar />
         <ReactFlow
-            snapToGrid={true}
+            elementsSelectable={true}
             onLoad={onLoad}
             onDragOver={onDragOver}
             ref={reactFlowWrapper}
             onDrop={onDrop}
-            snapGrid={[10, 20]}
+            onElementsRemove={onElementsRemove}
+            onConnect={onConnect}
             onElementClick={(_, element) => { setCurrentElement(element) }}
             defaultZoom={0.7}
-            nodeTypes={{
-                TextInputNode,
-            }}
+            nodeTypes={nodeTypes}
             style={{ height: '100%', width: '100%' }}
             elements={elements}
         >
             <MiniMap
                 nodeStrokeColor={(n) => {
-                    if (n.type === 'input') return '#0041d0';
-                    if (n.type === 'TextInputNode') return '#0041d0';
-                    if (n.type === 'output') return '#ff0072';
-                    return "";
+                    if (n.type === 'InputNode') return '#0041d0';
+                    return "black";
                 }}
                 nodeColor={(n) => {
-                    if (n.type === 'TextInputNode') return '#0041d0';
+                    if (n.type === 'InputNode') return '#0041d0';
                     return '#fff';
                 }}
             />

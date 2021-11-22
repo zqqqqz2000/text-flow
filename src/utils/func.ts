@@ -14,6 +14,6 @@ export const stepPartialFunc = (func: (args: any) => void, funcArgsSign: string[
     return { func: resFunc, reset: () => { accArgs = {}; } };
 };
 
-export const textSplit = (str: string, sep: string = '\n') => {
-    return str.split(sep);
+export const textSplit = (str: string) => {
+    return str.split('\n');
 };
