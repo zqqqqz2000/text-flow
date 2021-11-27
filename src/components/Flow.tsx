@@ -1,6 +1,6 @@
-import React, { memo, useEffect, useState, DragEvent, useRef, useCallback } from 'react';
+import React, { memo, useEffect, useState, DragEvent, useRef, useCallback, useMemo } from 'react';
 import { Center, Square, Stack } from '@chakra-ui/layout';
-import { Box, StackDivider } from '@chakra-ui/react';
+import { Box, IconButton, StackDivider } from '@chakra-ui/react';
 import AceEditor from 'react-ace';
 import "ace-builds/src-noconflict/ext-language_tools";
 import ReactFlow, { addEdge, Controls, Elements as FlowElements, FlowElement, Handle, MiniMap, OnLoadParams, Position, removeElements } from 'react-flow-renderer';
@@ -14,6 +14,8 @@ import { FilterNode } from './Nodes/FilterNode';
 import { ReduceNode } from './Nodes/ReduceNode';
 import { JoinNode } from './Nodes/JoinNode';
 import { ProcessNode } from './Nodes/ProcessNode';
+import { WriterNode } from './Nodes/WriterNode';
+import { ArrowForwardIcon } from '@chakra-ui/icons';
 
 export type TextFlowTextProps = {
     flowProcessor: FlowProcessor;
@@ -26,6 +28,7 @@ const nodeTypes = {
     JoinNode,
     ProcessNode,
     ReduceNode,
+    WriterNode,
 };
 
 const SideBar: React.FC = () => {
@@ -36,23 +39,30 @@ const SideBar: React.FC = () => {
             event.dataTransfer.effectAllowed = 'move';
         }
     };
-    return <Stack w="300px" height="100%" spacing={4} p={2}>
+    return <Stack overflowY='auto' overflowX='hidden' minW='220px' spacing={4} p={2}>
         <Box onDragStart={(event) => onDragStart(event, 'MapNode')} draggable>
-            <MapNode data={{}} />
+            <MapNode />
         </Box>
         <Box onDragStart={(event) => onDragStart(event, 'FilterNode')} draggable>
             <FilterNode />
         </Box>
         <Box onDragStart={(event) => onDragStart(event, 'ReduceNode')} draggable>
-            <ReduceNode data={{}} />
+            <ReduceNode />
         </Box>
         <Box onDragStart={(event) => onDragStart(event, 'JoinNode')} draggable>
-            <JoinNode data={{}} />
+            <JoinNode />
         </Box>
         <Box onDragStart={(event) => onDragStart(event, 'ProcessNode')} draggable>
-            <ProcessNode data={{}} />
+            <ProcessNode />
         </Box>
-    </Stack>
+        <Box onDragStart={(event) => onDragStart(event, 'WriterNode')} draggable>
+            <WriterNode />
+        </Box>
+    </Stack>;
+};
+
+const findNode = (nodeId: string, nodes: FlowElement[]) => {
+    return nodes.find(node => node.id === nodeId);
 };
 
 let id = 0;
@@ -61,17 +71,35 @@ const getId = () => `processor-${id++}`;
 export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
     const [elements, setElements] = useState<FlowElements>([]);
     const [nodeElementInfo, setNodeElementInfo] = useState<Map<ProcessorChainNode, FlowElement>>(new Map());
-    const [currentElement, setCurrentElement] = useState<FlowElement | undefined>(undefined);
+    const [currentElementId, setCurrentElementId] = useState<string | undefined>(undefined);
+    const currentElement = useMemo(() => {
+        return findNode(currentElementId ?? '', elements);
+    }, [currentElementId, elements]);
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
     const [reactFlowInstance, setReactFlowInstance] = useState<OnLoadParams | undefined>(undefined);
     useEffect(() => {
+        const onRootReset = (id: string) => {
+            setElements((elements) => {
+                const node = findNode(id, elements);
+                if (node) {
+                    node.data.code = defaultSplit;
+                    setCurrentElementId(node.id);
+                }
+                return [...elements];
+            });
+        };
         const newElements: FlowElements = [];
         let rootElement = nodeElementInfo.get(flowProcessor.processChain);
         if (!rootElement) {
             rootElement = {
                 id: 'root',
                 type: 'InputNode',
-                data: { code: defaultSplit, withHandle: true },
+                data: {
+                    code: defaultSplit,
+                    withHandle: true,
+                    onReset: onRootReset,
+                    id: 'root',
+                },
                 position: { x: 0, y: 0 },
                 sourcePosition: Position.Right,
             };
@@ -96,11 +124,12 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
                 x: event.clientX - reactFlowBounds.left,
                 y: event.clientY - reactFlowBounds.top ?? 0,
             });
+            const id = getId();
             const newNode = {
-                id: getId(),
+                id,
                 type,
                 position,
-                data: { withHandle: true },
+                data: { withHandle: true, id },
             };
 
             setElements((es) => es.concat(newNode));
@@ -154,7 +183,7 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
             onDrop={onDrop}
             onElementsRemove={onElementsRemove}
             onConnect={onConnect}
-            onElementClick={(_, element) => { setCurrentElement(element) }}
+            onElementClick={(_, element) => { setCurrentElementId(element.id) }}
             defaultZoom={0.7}
             nodeTypes={nodeTypes}
             style={{ height: '100%', width: '100%' }}
@@ -162,15 +191,23 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
         >
             <MiniMap
                 nodeStrokeColor={(n) => {
-                    if (n.type === 'InputNode') return '#0041d0';
+                    if (n.type === 'InputNode') return 'blue';
+                    if (n.type === 'WriterNode') return 'green';
                     return "black";
                 }}
                 nodeColor={(n) => {
-                    if (n.type === 'InputNode') return '#0041d0';
                     return '#fff';
                 }}
             />
             <Controls />
         </ReactFlow>
+        <Stack width='100px' align='center' pr={4} pt={4}>
+            <IconButton
+                colorScheme="teal"
+                aria-label="moist run"
+                size="xs"
+                icon={<ArrowForwardIcon />}
+            />
+        </Stack>
     </Stack>;
 };
