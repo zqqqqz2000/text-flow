@@ -1,13 +1,13 @@
-import React, { memo, useEffect, useState, DragEvent, useRef, useCallback, useMemo } from 'react';
-import { Center, Square, Stack } from '@chakra-ui/layout';
+import React, { useEffect, useState, DragEvent, useRef, useCallback, useMemo } from 'react';
+import { Stack } from '@chakra-ui/layout';
 import { Box, IconButton, StackDivider } from '@chakra-ui/react';
 import AceEditor from 'react-ace';
 import "ace-builds/src-noconflict/ext-language_tools";
-import ReactFlow, { addEdge, Controls, Elements as FlowElements, FlowElement, Handle, MiniMap, OnLoadParams, Position, removeElements } from 'react-flow-renderer';
-import { FlowProcessor, ProcessorChainNode } from '../utils/flowProcessor';
+import ReactFlow, { addEdge, Controls, Elements as FlowElements, FlowElement, MiniMap, OnLoadParams, Position, removeElements } from 'react-flow-renderer';
+import { FlowProcessor, KeyofProcessWarpFuncMap, ProcessorChainNode } from '../utils/flowProcessor';
 import "ace-builds/src-noconflict/mode-javascript";
 import "ace-builds/src-noconflict/theme-tomorrow";
-import { defaultSplit } from '../utils/codeDemo';
+import { defaultCodeMap, defaultFilter, defaultMap, defaultProcess, defaultReduce, defaultSplit } from '../utils/codeTemplates';
 import { InputNode } from './Nodes/InputNode';
 import { MapNode } from './Nodes/MapNode';
 import { FilterNode } from './Nodes/FilterNode';
@@ -30,6 +30,8 @@ const nodeTypes = {
     ReduceNode,
     WriterNode,
 };
+
+type KeyofNodeTypes = keyof typeof nodeTypes;
 
 const SideBar: React.FC = () => {
     const onDragStart = (event: DragEvent, nodeType: string) => {
@@ -65,12 +67,47 @@ const findNode = (nodeId: string, nodes: FlowElement[]) => {
     return nodes.find(node => node.id === nodeId);
 };
 
+const generateProcessorChianNode = (nodeType: KeyofNodeTypes) => {
+    const type = nodeFlowMap[nodeType];
+    if (type === 'map') {
+        return new ProcessorChainNode(new Set(), { func: eval(defaultMap) }, type, []);
+    }
+    if (type === 'filter') {
+        return new ProcessorChainNode(new Set(), { func: eval(defaultFilter) }, type, []);
+    }
+    if (type === 'reduce') {
+        return new ProcessorChainNode(new Set(), { func: eval(defaultReduce) }, type, []);
+    }
+    if (type === 'join') {
+        return new ProcessorChainNode(new Set(), { separator: '\n' }, type, []);
+    }
+    if (type === 'process') {
+        return new ProcessorChainNode(new Set(), { func: eval(defaultProcess) }, type, []);
+    }
+    if (type === 'writer') {
+        return new ProcessorChainNode(new Set(), { debug: true }, type, []);
+    }
+    return new ProcessorChainNode(new Set(), {}, 'input', []);
+};
+
+const nodeFlowMap: {
+    [key in KeyofNodeTypes]: KeyofProcessWarpFuncMap
+} = {
+    MapNode: 'map',
+    FilterNode: 'filter',
+    InputNode: 'input',
+    JoinNode: 'join',
+    ProcessNode: 'process',
+    ReduceNode: 'reduce',
+    WriterNode: 'writer',
+};
+
 let id = 0;
 const getId = () => `processor-${id++}`;
 
 export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
     const [elements, setElements] = useState<FlowElements>([]);
-    const [nodeElementInfo, setNodeElementInfo] = useState<Map<ProcessorChainNode, FlowElement>>(new Map());
+    const [nodeElementInfo, setNodeElementInfo] = useState<Map<ProcessorChainNode, string>>(new Map());
     const [currentElementId, setCurrentElementId] = useState<string | undefined>(undefined);
     const currentElement = useMemo(() => {
         return findNode(currentElementId ?? '', elements);
@@ -88,24 +125,19 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
                 return [...elements];
             });
         };
-        const newElements: FlowElements = [];
-        let rootElement = nodeElementInfo.get(flowProcessor.processChain);
-        if (!rootElement) {
-            rootElement = {
+        const newElements: FlowElements = [{
+            id: 'root',
+            type: 'InputNode',
+            data: {
+                code: defaultSplit,
+                withHandle: true,
+                onReset: onRootReset,
+                processorChianNode: flowProcessor.processChain,
                 id: 'root',
-                type: 'InputNode',
-                data: {
-                    code: defaultSplit,
-                    withHandle: true,
-                    onReset: onRootReset,
-                    id: 'root',
-                },
-                position: { x: 0, y: 0 },
-                sourcePosition: Position.Right,
-            };
-            nodeElementInfo.set(flowProcessor.processChain, rootElement);
-        }
-        newElements.push(rootElement);
+            },
+            position: { x: 0, y: 0 },
+            sourcePosition: Position.Right,
+        }];
         setElements(newElements);
     }, [flowProcessor, nodeElementInfo]);
     const onLoad = (_reactFlowInstance: OnLoadParams) =>
@@ -119,19 +151,20 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
         event.preventDefault();
         if (reactFlowWrapper.current && reactFlowInstance) {
             const reactFlowBounds = reactFlowWrapper.current.getBoundingClientRect();
-            const type = event.dataTransfer.getData('application/reactflow');
+            const nodeType = event.dataTransfer.getData('application/reactflow') as KeyofNodeTypes;
             const position = reactFlowInstance.project({
                 x: event.clientX - reactFlowBounds.left,
                 y: event.clientY - reactFlowBounds.top ?? 0,
             });
             const id = getId();
+            const processorChianNode = generateProcessorChianNode(nodeType);
+            flowProcessor.addNode(processorChianNode);
             const newNode = {
                 id,
-                type,
+                type: nodeType,
                 position,
-                data: { withHandle: true, id },
+                data: { withHandle: true, id, processorChianNode, code: defaultCodeMap[nodeFlowMap[nodeType]] },
             };
-
             setElements((es) => es.concat(newNode));
         }
     };
@@ -144,6 +177,10 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
     const onConnect = useCallback(
         (params) => {
             setElements((els) => {
+                const [source, target] = els;
+                if (source.id === 'root') {
+                    flowProcessor.processChain = target.data.processorChianNode;
+                }
                 return addEdge({ ...params, animated: true, style: { stroke: 'black' } }, els);
             });
         }, []
@@ -158,7 +195,7 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
         <AceEditor
             height="100%"
             width="900px"
-            placeholder="javascript process code"
+            placeholder="javascript process code, make sure it is not evil for eval!!"
             mode="javascript"
             theme="tomorrow"
             name="blah2"

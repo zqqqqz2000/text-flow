@@ -3,9 +3,10 @@ import { stepPartialFunc } from "./func";
 
 export class FlowProcessor {
     public lastRemain = '';
+    public processChain?: ProcessorChainNode;
     public readonly nodes: Set<ProcessorChainNode> = new Set();
+
     constructor(
-        public processChain: ProcessorChainNode,
         public splitFunc: (content: string) => string[],
     ) {
         this.walk(n => {
@@ -48,6 +49,9 @@ export class FlowProcessor {
 
     public walk(process: (node: ProcessorChainNode, parent: ProcessorChainNode) => boolean, root?: ProcessorChainNode) {
         const rootNode = root ?? this.processChain;
+        if (!rootNode) {
+            return;
+        }
         const walkHelper = (node: ProcessorChainNode) => {
             try {
                 node.childNodes.forEach(n => {
@@ -77,27 +81,58 @@ export class FlowProcessor {
         splitted[0] = this.lastRemain + splitted[0];
         this.lastRemain = splitted[splitted.length - 1];
         splitted = splitted.slice(1, splitted.length - 1);
-        this.processChain.process({ input: splitted, debug });
+        this.processChain?.process({ input: splitted, debug });
     }
 
     public run(fileTrunkReader: FileTrunkReader) {
     }
 };
 
-export type ProcessorInput = { input: unknown, debug?: boolean };
+export type ProcessorInput = { debug?: boolean, arr?: unknown[], [key: string]: unknown };
 
-export class ProcessorChainNode {
+const processWarpFuncMap = {
+    map: (argsOuter: { func: (current: unknown, index: number, array: unknown[]) => unknown }) => {
+        return (args: ProcessorInput) => args?.arr?.map(argsOuter.func);
+    },
+    reduce: (argsOuter: { func: (accumulator: unknown, currentValue: unknown, currentIndex: number, array: unknown[]) => unknown, initialValue?: unknown }) => {
+        return (args: ProcessorInput) => args?.arr?.reduce(argsOuter.func, args.initialValue);
+    },
+    filter: (argsOuter: { func: (current: unknown, index: number, array: unknown[]) => boolean }) => {
+        return (args: ProcessorInput) => args?.arr?.filter(argsOuter.func);
+    },
+    join: (argsOuter: { separator: string }) => {
+        return (args: ProcessorInput) => args?.arr?.join(argsOuter.separator);
+    },
+    process: (argsOuter: { func: (input: ProcessorInput) => unknown }) => {
+        return argsOuter.func;
+    },
+    writer: (argsOuter: { debug: boolean }) => {
+        return () => { };
+    },
+    input: (argsOuter: {}) => {
+        return '';
+    },
+};
+
+export type KeyofProcessWarpFuncMap = keyof typeof processWarpFuncMap;
+
+export class ProcessorChainNode<T extends KeyofProcessWarpFuncMap = any> {
     public process: (args: { [index: string]: any }) => void;
     public reset: () => void;
     public output?: unknown;
     public input?: ProcessorInput;
     public error?: unknown;
+    private processor: (args: ProcessorInput) => unknown;
 
     constructor(
         public childNodes: Set<ProcessorChainNode>,
-        private processor: (args: ProcessorInput) => unknown,
+        processorGenParam: Parameters<(typeof processWarpFuncMap)[T]>[0],
+        public readonly nodeType: T,
         private processorArgsSign: string[],
     ) {
+        const warpFunc = processWarpFuncMap[nodeType];
+        // @ts-ignore
+        this.processor = warpFunc(processorGenParam);
         const { func, reset } = stepPartialFunc(this.process_, this.processorArgsSign);
         this.process = func;
         this.reset = reset;

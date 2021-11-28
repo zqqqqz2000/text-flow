@@ -10,7 +10,7 @@ import { IJsonModel, Layout, Model } from "flexlayout-react";
 import { DisplayRange, DisplayRangeSelector } from "./components/DisplayRangeSelector";
 import { useThrottle } from "react-use";
 import { TextFlow } from "./components/Flow";
-import { FlowProcessor, ProcessorChainNode } from "./utils/flowProcessor";
+import { FlowProcessor } from "./utils/flowProcessor";
 import { textSplit } from "./utils/func";
 
 const validateFiles = (value: FileList) => {
@@ -109,7 +109,9 @@ function App() {
   const [saving, setSaving] = useState<boolean>(false);
   const flowProcessor = useMemo(
     () => {
-      return new FlowProcessor(new ProcessorChainNode(new Set(), (props) => props, []), textSplit);
+      return new FlowProcessor(
+        textSplit
+      );
     }, []);
 
   const onSubmit = handleSubmit((data) => {
