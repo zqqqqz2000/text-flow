@@ -177,9 +177,25 @@ export const TextFlow: React.FC<TextFlowTextProps> = ({ flowProcessor }) => {
     const onConnect = useCallback(
         (params) => {
             setElements((els) => {
-                const [source, target] = els;
+                const source = findNode(params.source, els);
+                const target = findNode(params.target, els);
+                if (!source || !target) {
+                    return els;
+                }
+                if (source.id === target.id) {
+                    return els;
+                }
                 if (source.id === 'root') {
                     flowProcessor.processChain = target.data.processorChianNode;
+                } else {
+                    const sourceProcessorChianNode: ProcessorChainNode = source.data.processorChianNode;
+                    const targetProcessorChianNode: ProcessorChainNode = target.data.processorChianNode;
+                    if (sourceProcessorChianNode && targetProcessorChianNode) {
+                        const attachSuccess = flowProcessor.attachChild(targetProcessorChianNode, sourceProcessorChianNode);
+                        if (!attachSuccess) {
+                            return els;
+                        }
+                    }
                 }
                 return addEdge({ ...params, animated: true, style: { stroke: 'black' } }, els);
             });

@@ -26,7 +26,7 @@ export class FlowProcessor {
             this.nodes.add(parentNode);
             parentNode.childNodes.add(childNode);
         }
-        return circle;
+        return !circle;
     }
 
     public detachChild(parentNode: ProcessorChainNode, childNode: ProcessorChainNode) {
